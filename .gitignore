@@ -60,4 +60,5 @@ typings/
 # dotenv environment variables file
 .env
 
-Loaded so far: 10819011 out of 13600000
+# vscode configs
+.vscode
