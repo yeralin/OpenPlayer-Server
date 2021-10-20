@@ -1,11 +1,11 @@
-function Version(version) {
+const Version = (version) => {
     var version = {
         'version': version
     };
     return version;
 }
 
-function YoutubeEntry(title, url) {
+const YouTubeEntry = (title, url) => {
     var youtubeEntry = {
         'title': title,
         'url': url
@@ -13,7 +13,7 @@ function YoutubeEntry(title, url) {
     return youtubeEntry;
 }
 
-module.exports = {
-    "Version": Version,
-    "YoutubeEntry": YoutubeEntry
+export {
+    Version,
+    YouTubeEntry
 };

@@ -62,3 +62,5 @@ typings/
 
 # vscode configs
 .vscode
+
+songs/*.mp3
