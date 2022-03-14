@@ -1,0 +1,7 @@
+python-dotenv
+waitress
+Flask
+spotipy
+git+https://github.com/kokarare1212/librespot-python
+pytube
+python-youtube

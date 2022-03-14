@@ -1,0 +1,3 @@
+
+class StreamerError(Exception):
+    pass
