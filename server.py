@@ -1,13 +1,12 @@
-import waitress
-from dotenv import load_dotenv
-from librespot.core import Session
-
-from flask import Flask, Response, jsonify, request
-from models import Version
-from streamers.exceptions import StreamerError
-
-from streamers.spotify import SpotifyStreamer
+from dotenv import load_dotenv;load_dotenv()
 from streamers.youtube import YouTubeStreamer
+from streamers.spotify import SpotifyStreamer
+from streamers.exceptions import StreamerError
+from models import Version
+from flask import Flask, Response, jsonify, request
+from librespot.core import Session
+import waitress
+
 
 app = Flask(__name__)
 spotify_streamer = SpotifyStreamer()
@@ -85,5 +84,4 @@ def stream_youtube():
 
 
 if __name__ == "__main__":
-    load_dotenv()
     waitress.serve(app, host='0.0.0.0', port=8000)
