@@ -1,6 +1,7 @@
 python-dotenv
 waitress
 Flask
+Flask-HTTPAuth
 spotipy
 git+https://github.com/kokarare1212/librespot-python
 pytube

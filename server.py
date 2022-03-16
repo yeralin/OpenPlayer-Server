@@ -1,16 +1,25 @@
 from dotenv import load_dotenv;load_dotenv()
+from os import getenv
 from streamers.youtube import YouTubeStreamer
 from streamers.spotify import SpotifyStreamer
 from streamers.exceptions import StreamerError
 from models import Version
 from flask import Flask, Response, jsonify, request
 from librespot.core import Session
+from flask_httpauth import HTTPBasicAuth
 import waitress
 
 
 app = Flask(__name__)
+auth = HTTPBasicAuth()
 spotify_streamer = SpotifyStreamer()
 youtube_streamer = YouTubeStreamer()
+
+
+@auth.verify_password
+def verify_password(username, password):
+    return username == getenv("USERNAME") \
+        and password == getenv("PASSWORD")
 
 
 @app.route('/version', methods=['GET'])
@@ -19,6 +28,7 @@ def version():
 
 
 @app.route('/search', methods=['GET'])
+@auth.login_required
 def search():
     search_query = request.args.get('q')
     limit = int(request.args.get('limit', 20))
@@ -32,6 +42,7 @@ def search():
 
 
 @app.route(SpotifyStreamer.search_path, methods=['GET'])
+@auth.login_required
 def search_spotify():
     search_query = request.args.get('q')
     limit = int(request.args.get('limit', 20))
@@ -42,6 +53,7 @@ def search_spotify():
 
 
 @app.route(YouTubeStreamer.search_path, methods=['GET'])
+@auth.login_required
 def search_youtube():
     search_query = request.args.get('q')
     limit = int(request.args.get('limit', 20))
@@ -52,6 +64,7 @@ def search_youtube():
 
 
 @app.route(SpotifyStreamer.stream_path, methods=['GET'])
+@auth.login_required
 def stream_spotify():
     track_id = request.args.get('trackId')
     if not track_id:
@@ -68,6 +81,7 @@ def stream_spotify():
 
 
 @app.route(YouTubeStreamer.stream_path, methods=['GET'])
+@auth.login_required
 def stream_youtube():
     video_id = request.args.get('videoId')
     if not video_id:
