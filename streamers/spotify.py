@@ -8,8 +8,8 @@ from typing import Generator, List, Optional, Tuple
 from librespot.proto.Metadata_pb2 import AudioFile
 from models import Entry
 from streamers import utils
+from streamers.base_streamer import BaseStreamer
 from streamers.exceptions import StreamerError
-from streamers.streamer import Streamer
 from librespot.core import Session
 from librespot.audio import PlayableContentFeeder
 from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
@@ -18,7 +18,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
 
-class SpotifyStreamer(Streamer):
+class SpotifyStreamer(BaseStreamer):
     
     stream_path = '/stream/spotify'
     search_path = '/search/spotify'

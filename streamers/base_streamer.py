@@ -6,7 +6,7 @@ from typing import Any, Generator, List, Tuple
 from models import Entry
 
 
-class Streamer(ABC):
+class BaseStreamer(ABC):
 
     @property
     def stream_path(self):

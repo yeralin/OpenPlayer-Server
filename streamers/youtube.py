@@ -8,12 +8,12 @@ from typing import Generator, List, Tuple
 from pytube import YouTube
 from models import Entry
 from streamers import utils
+from streamers.base_streamer import BaseStreamer
 from streamers.exceptions import StreamerError
 from pytube.streams import Stream
-from streamers.streamer import Streamer
 
 
-class YouTubeStreamer(Streamer):
+class YouTubeStreamer(BaseStreamer):
 
     stream_path = '/stream/youtube'
     search_path = '/search/youtube'
