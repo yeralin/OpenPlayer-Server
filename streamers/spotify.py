@@ -112,21 +112,26 @@ class SpotifyStreamer(Streamer):
             poll = select.poll()
             poll.register(ffmpeg_process.stdout, select.POLLIN)
             transmitted = 0
-            while True:
-                if not ffmpeg_process.stdin.closed:
-                    in_chunk = input_stream.read(self.chunk_size)
-                    if not in_chunk:
-                        ffmpeg_process.stdin.close()
-                        continue
-                    ffmpeg_process.stdin.write(in_chunk)
-                while poll.poll(10):
-                    out_chunk = ffmpeg_process.stdout.read(bitrate)
-                    if not out_chunk:
-                        ffmpeg_process.stdout.close()
-                        ffmpeg_process.terminate()
-                        if transmitted < size:
-                            yield bytearray(size-transmitted)
-                        return
-                    transmitted += len(out_chunk)
-                    yield out_chunk
+            try:
+                while True:
+                    if not ffmpeg_process.stdin.closed:
+                        in_chunk = input_stream.read(self.chunk_size)
+                        if not in_chunk:
+                            ffmpeg_process.stdin.close()
+                            continue
+                        ffmpeg_process.stdin.write(in_chunk)
+                    while poll.poll(10):
+                        out_chunk = ffmpeg_process.stdout.read(bitrate)
+                        if not out_chunk:
+                            ffmpeg_process.stdout.close()
+                            ffmpeg_process.terminate()
+                            if transmitted < size:
+                                yield bytearray(size-transmitted)
+                            return
+                        transmitted += len(out_chunk)
+                        yield out_chunk
+            except GeneratorExit:
+                ffmpeg_process.stdin.close()
+                ffmpeg_process.stdout.close()
+                ffmpeg_process.terminate()
         return stream

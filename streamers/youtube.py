@@ -76,14 +76,19 @@ class YouTubeStreamer(Streamer):
                 stderr=subprocess.DEVNULL
             )
             transmitted = 0
-            while True:
-                chunk = ffmpeg_process.stdout.read(bitrate)
-                if not chunk:
-                    ffmpeg_process.stdout.close()
-                    ffmpeg_process.terminate()
-                    if transmitted < size:
-                        yield bytearray(size-transmitted)
-                    return
-                transmitted += len(chunk)
-                yield chunk
+            try:
+                while True:
+                    chunk = ffmpeg_process.stdout.read(bitrate)
+                    if not chunk:
+                        ffmpeg_process.stdout.close()
+                        ffmpeg_process.terminate()
+                        if transmitted < size:
+                            yield bytearray(size-transmitted)
+                        return
+                    transmitted += len(chunk)
+                    yield chunk
+            except GeneratorExit:
+                ffmpeg_process.stdin.close()
+                ffmpeg_process.stdout.close()
+                ffmpeg_process.terminate()
         return stream
