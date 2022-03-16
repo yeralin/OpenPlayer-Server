@@ -3,6 +3,7 @@
 .vscode
 .cache
 .env
+credentials.json
 out
 log.log
 **/node_modules
