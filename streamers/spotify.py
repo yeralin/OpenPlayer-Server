@@ -120,7 +120,7 @@ class SpotifyStreamer(Streamer):
                             ffmpeg_process.stdin.close()
                             continue
                         ffmpeg_process.stdin.write(in_chunk)
-                    while poll.poll(10):
+                    while poll.poll(100):
                         out_chunk = ffmpeg_process.stdout.read(bitrate)
                         if not out_chunk:
                             ffmpeg_process.stdout.close()
