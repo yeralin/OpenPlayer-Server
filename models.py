@@ -3,7 +3,7 @@ class Version(dict):
     
     def __init__(self, version: str):
         self.version = version
-        dict.__init__(self, version)
+        dict.__init__(self, self.__dict__)
 
 class Entry(dict):
 
