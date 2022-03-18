@@ -88,7 +88,6 @@ class YouTubeStreamer(BaseStreamer):
                     transmitted += len(chunk)
                     yield chunk
             except GeneratorExit:
-                ffmpeg_process.stdin.close()
                 ffmpeg_process.stdout.close()
                 ffmpeg_process.terminate()
         return stream
