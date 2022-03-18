@@ -17,7 +17,7 @@ class YouTubeStreamer(BaseStreamer):
 
     stream_path = '/stream/youtube'
     search_path = '/search/youtube'
-    youtube_video_id_regex = r'([a-zA-Z0-9]{11})'
+    youtube_video_id_regex = r'([a-zA-Z0-9_-]{11})'
 
     MUSIC_CATEGORY = '10'
 
