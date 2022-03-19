@@ -83,7 +83,7 @@ class YouTubeStreamer(BaseStreamer):
                         ffmpeg_process.stdout.close()
                         ffmpeg_process.terminate()
                         if transmitted < size:
-                            yield bytearray(size-transmitted)
+                            yield b'\0' * (size-transmitted)
                         return
                     transmitted += len(chunk)
                     yield chunk
