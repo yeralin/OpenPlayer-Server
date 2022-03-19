@@ -83,13 +83,13 @@ class SpotifyStreamer(BaseStreamer):
         return results
     
     def request_stream(self, id: str) -> Tuple[Generator[BytesIO, None, None], int, int]:
-        track_id = TrackId.from_uri("spotify:track:" + self._parse_spotify_track_id(id))
+        track_id = self._parse_spotify_track_id(id)
         if not track_id:
             raise StreamerError(
                 'Invalid trackId param, expected ' + self.spotify_track_regex)
         preferred_quality = VorbisOnlyAudioQuality(AudioQuality.HIGH)
         playable_content = self.content_feeder.load(
-            track_id, preferred_quality, False, None)
+            TrackId.from_uri("spotify:track:" + track_id), preferred_quality, False, None)
         preferred_file = preferred_quality.get_file(
             playable_content.track.file)
         bitrate = self._extract_bitrate(preferred_file.format)
