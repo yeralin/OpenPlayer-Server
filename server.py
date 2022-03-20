@@ -5,9 +5,7 @@ from streamers.spotify import SpotifyStreamer
 from streamers.exceptions import StreamerError
 from models import Version
 from flask import Flask, Response, jsonify, request
-from librespot.core import Session
 from flask_httpauth import HTTPBasicAuth
-import waitress
 
 
 app = Flask(__name__)
@@ -98,4 +96,4 @@ def stream_youtube():
 
 
 if __name__ == "__main__":
-    waitress.serve(app, host='0.0.0.0', port=8000)
+    app.run()
