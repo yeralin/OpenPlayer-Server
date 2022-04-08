@@ -1,6 +1,5 @@
 python-dotenv
-gunicorn
-gevent
+bjoern
 Flask
 Flask-HTTPAuth
 spotipy
