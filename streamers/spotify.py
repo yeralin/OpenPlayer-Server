@@ -1,9 +1,8 @@
-
 from io import BytesIO
 from os import getenv
 import re
 import subprocess
-import select
+import threading
 from typing import Generator, List, Optional, Tuple
 from librespot.proto.Metadata_pb2 import AudioFile
 from models import Entry
@@ -100,6 +99,15 @@ class SpotifyStreamer(BaseStreamer):
 
     def generate_stream(self, payload: PlayableContentFeeder.LoadedStream,
                         bitrate: int, size: int) -> Generator[BytesIO, None, None]:
+        
+        def async_write(ffmpeg_process, stream):
+            while True:
+                in_chunk = stream.read(self.chunk_size)
+                if not in_chunk:
+                    ffmpeg_process.stdin.close()
+                    break
+                ffmpeg_process.stdin.write(in_chunk)
+
         def stream():
             input_stream = payload.input_stream.stream()
             ffmpeg_process = subprocess.Popen(
@@ -109,27 +117,20 @@ class SpotifyStreamer(BaseStreamer):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL
             )
-            poll = select.poll()
-            poll.register(ffmpeg_process.stdout, select.POLLIN)
+            write_t = threading.Thread(target=async_write, args=(ffmpeg_process,input_stream,))
+            write_t.start()
             transmitted = 0
             try:
                 while True:
-                    if not ffmpeg_process.stdin.closed:
-                        in_chunk = input_stream.read(self.chunk_size)
-                        if not in_chunk:
-                            ffmpeg_process.stdin.close()
-                            continue
-                        ffmpeg_process.stdin.write(in_chunk)
-                    while poll.poll(100):
-                        out_chunk = ffmpeg_process.stdout.read(bitrate)
-                        if not out_chunk:
-                            ffmpeg_process.stdout.close()
-                            ffmpeg_process.terminate()
-                            if transmitted < size:
-                                yield b'\0' * (size-transmitted)
-                            return
-                        transmitted += len(out_chunk)
-                        yield out_chunk
+                    out_chunk = ffmpeg_process.stdout.read(self.chunk_size)
+                    if not out_chunk:
+                        ffmpeg_process.stdout.close()
+                        ffmpeg_process.terminate()
+                        if transmitted < size:
+                            yield b'\0' * (size-transmitted)
+                        return
+                    transmitted += len(out_chunk)
+                    yield out_chunk
             except GeneratorExit:
                 ffmpeg_process.stdin.close()
                 ffmpeg_process.stdout.close()
