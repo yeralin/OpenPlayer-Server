@@ -23,11 +23,13 @@ class YouTubeStreamer(BaseStreamer):
 
     def __init__(self, search_type: List[str] = ['video'],
                  video_category_id: str = MUSIC_CATEGORY,
-                 api_key: str = getenv('YOUTUBE_API_KEY')) -> None:
+                 api_key: str = getenv('YOUTUBE_API_KEY'),
+                 chunk_size: int = 50000) -> None:
         super().__init__()
         self.search_type = search_type
         self.video_category_id = video_category_id
         self.youtube_api = pyyoutube.Api(api_key=api_key)
+        self.chunk_size = chunk_size
 
     def _parse_youtube_video_id(self, video_id: str) -> str:
         match = re.search(self.youtube_video_id_regex, video_id)
@@ -79,7 +81,7 @@ class YouTubeStreamer(BaseStreamer):
             transmitted = 0
             try:
                 while True:
-                    chunk = ffmpeg_process.stdout.read(bitrate)
+                    chunk = ffmpeg_process.stdout.read(self.chunk_size)
                     if not chunk:
                         ffmpeg_process.stdout.close()
                         ffmpeg_process.terminate()
