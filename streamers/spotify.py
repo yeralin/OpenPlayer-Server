@@ -81,7 +81,7 @@ class SpotifyStreamer(BaseStreamer):
             results.append(Entry(title, url, self.get_name()))
         return results
     
-    def request_stream(self, id: str) -> Tuple[Generator[BytesIO, None, None], int, int]:
+    def request_stream(self, id: str) -> Tuple[Generator[BytesIO, None, None], str, int, int]:
         track_id = self._parse_spotify_track_id(id)
         if not track_id:
             raise StreamerError(
@@ -91,11 +91,13 @@ class SpotifyStreamer(BaseStreamer):
             TrackId.from_uri("spotify:track:" + track_id), preferred_quality, False, None)
         preferred_file = preferred_quality.get_file(
             playable_content.track.file)
+        artists = ', '.join([artist.name for artist in playable_content.track.artist])
+        title = ' - '.join([artists, playable_content.track.name])
         bitrate = self._extract_bitrate(preferred_file.format)
         duration = playable_content.track.duration // 1000  # ms to sec
         size = utils.estimate_size(duration, bitrate)
         stream = self.generate_stream(playable_content, bitrate, size)
-        return (stream, duration, size)
+        return (stream, title, duration, size)
 
     def generate_stream(self, payload: PlayableContentFeeder.LoadedStream,
                         bitrate: int, size: int) -> Generator[BytesIO, None, None]:

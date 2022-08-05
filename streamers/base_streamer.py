@@ -25,7 +25,7 @@ class BaseStreamer(ABC):
         pass
 
     @abstractmethod
-    def request_stream(self, id: str) -> Tuple[Generator[BytesIO, None, None], int, int]:
+    def request_stream(self, id: str) -> Tuple[Generator[BytesIO, None, None], str, int, int]:
         pass
 
     @abstractmethod

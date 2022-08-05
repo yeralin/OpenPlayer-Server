@@ -53,19 +53,20 @@ class YouTubeStreamer(BaseStreamer):
             results.append(Entry(title, url, self.get_name()))
         return results
 
-    def request_stream(self, id: str) -> Tuple[Generator[BytesIO, None, None], int, int]:
+    def request_stream(self, id: str) -> Tuple[Generator[BytesIO, None, None], str, int, int]:
         video_id = self._parse_youtube_video_id(id)
         if not video_id:
             raise StreamerError(
                 'Invalid videoId param, expected ' + self.youtube_video_id_regex)
         youtube_video = YouTube('v='+video_id)
+        title = youtube_video.title
         duration = youtube_video.length
         hq_audio = max(youtube_video.streams.filter(
             adaptive=True, only_audio=True), key=lambda s: s.bitrate)
         bitrate = int(hq_audio.abr.replace('kbps', ''))  # hq_audio.abr is rounded
         size = utils.estimate_size(duration, bitrate)
         stream = self.generate_stream(hq_audio, bitrate, size)
-        return (stream, duration, size)
+        return (stream, title, duration, size)
 
     def generate_stream(self, payload: Stream, bitrate: int, size: int) -> Generator[BytesIO, None, None]:
         def stream():

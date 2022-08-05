@@ -65,34 +65,42 @@ def search_youtube():
 @auth.login_required
 def stream_spotify():
     track_id = request.args.get('trackId')
+    download = request.args.get('download', False)
     if not track_id:
         return "Missing 'trackId' query param", 400
     try:
-        stream, duration, size = spotify_streamer.request_stream(track_id)
+        stream, title, duration, size = spotify_streamer.request_stream(track_id)
+        headers = {
+            'Content-Length': str(size),
+            'Audio-Duration': str(duration),
+            'Content-Type': 'audio/mpeg'
+        }
+        if download:
+            headers['Content-Disposition'] = f'attachment; filename="{title}.mp3"'
     except StreamerError as e:
         return str(e), 400
-    return Response(stream(), headers={
-        'Content-Length': str(size),
-        'Audio-Duration': str(duration),
-        'Content-Type': 'audio/mpeg'
-    })
+    return Response(stream(), headers=headers)
 
 
 @app.route(YouTubeStreamer.stream_path, methods=['GET'])
 @auth.login_required
 def stream_youtube():
     video_id = request.args.get('videoId')
+    download = request.args.get('download', False)
     if not video_id:
         return 'Missing videoId query param', 400
     try:
-        stream, duration, size = youtube_streamer.request_stream(video_id)
+        stream, title, duration, size = youtube_streamer.request_stream(video_id)
+        headers = {
+            'Content-Length': str(size),
+            'Audio-Duration': str(duration),
+            'Content-Type': 'audio/mpeg'
+        }
+        if download:
+            headers['Content-Disposition'] = f'attachment; filename="{title}.mp3"'
     except StreamerError as e:
         return str(e), 400
-    return Response(stream(), headers={
-        'Content-Length': str(size),
-        'Audio-Duration': str(duration),
-        'Content-Type': 'audio/mpeg'
-    })
+    return Response(stream(), headers=headers)
 
 
 if __name__ == "__main__":
