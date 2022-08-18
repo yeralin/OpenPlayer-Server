@@ -103,12 +103,17 @@ class SpotifyStreamer(BaseStreamer):
                         bitrate: int, size: int) -> Generator[BytesIO, None, None]:
         
         def async_write(ffmpeg_process, stream):
-            while True:
-                in_chunk = stream.read(self.chunk_size)
-                if not in_chunk:
-                    ffmpeg_process.stdin.close()
-                    break
-                ffmpeg_process.stdin.write(in_chunk)
+            try:
+                while True:
+                    in_chunk = stream.read(self.chunk_size)
+                    if not in_chunk:
+                        ffmpeg_process.stdin.close()
+                        stream.read(self.chunk_size)
+                        break
+                    ffmpeg_process.stdin.write(in_chunk)
+            except:
+                ffmpeg_process.stdin.close()
+                stream.close()
 
         def stream():
             input_stream = payload.input_stream.stream()
@@ -133,7 +138,7 @@ class SpotifyStreamer(BaseStreamer):
                         return
                     transmitted += len(out_chunk)
                     yield out_chunk
-            except GeneratorExit:
+            except:
                 ffmpeg_process.stdin.close()
                 ffmpeg_process.stdout.close()
                 ffmpeg_process.terminate()
