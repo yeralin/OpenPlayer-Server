@@ -27,7 +27,7 @@ class SpotifyStreamer(BaseStreamer):
                  pwd: str = getenv('SPOTIFY_PASSWORD'),
                  client_id: str = getenv('SPOTIFY_CLIENT_ID'),
                  client_secret: str = getenv('SPOTIFY_CLIENT_SECRET'),
-                 chunk_size: int = 50000) -> None:
+                 chunk_size: int = (128 * 1024)) -> None:
         super().__init__()
         self.chunk_size = chunk_size
         self.session = Session.Builder().user_pass(username, pwd).create()
