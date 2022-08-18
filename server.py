@@ -61,9 +61,10 @@ def search_youtube():
     return jsonify(results)
 
 
-@app.route(SpotifyStreamer.stream_path, methods=['GET'])
+@app.route(SpotifyStreamer.stream_path, methods=['GET', 'HEAD'])
 @auth.login_required
 def stream_spotify():
+    method = request.method
     track_id = request.args.get('trackId')
     download = request.args.get('download', False)
     if not track_id:
@@ -79,7 +80,7 @@ def stream_spotify():
             headers['Content-Disposition'] = f'attachment; filename="{title}.mp3"'
     except StreamerError as e:
         return str(e), 400
-    return Response(stream(), headers=headers)
+    return Response(stream() if method == 'GET' else {}, headers=headers)
 
 
 @app.route(YouTubeStreamer.stream_path, methods=['GET'])
