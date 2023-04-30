@@ -1,3 +1,4 @@
+from urllib.parse import quote
 from dotenv import load_dotenv;load_dotenv()
 from os import getenv
 from streamers.youtube import YouTubeStreamer
@@ -101,7 +102,7 @@ def stream_spotify():
             'Content-Type': 'audio/mpeg'
         }
         if download:
-            headers['Content-Disposition'] = f'attachment; filename="{title}.mp3"'
+            headers['Content-Disposition'] = f'attachment; filename="{quote(title)}.mp3"'
     except StreamerError as e:
         return str(e), 400
     return Response(stream() if method == 'GET' else {}, headers=headers)
@@ -122,7 +123,7 @@ def stream_youtube():
             'Content-Type': 'audio/mpeg'
         }
         if download:
-            headers['Content-Disposition'] = f'attachment; filename="{title}.mp3"'
+            headers['Content-Disposition'] = f'attachment; filename="{quote(title)}.mp3"'
     except StreamerError as e:
         return str(e), 400
     return Response(stream(), headers=headers)
