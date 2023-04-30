@@ -31,7 +31,7 @@ class YouTubeStreamer(BaseStreamer):
         self.youtube_api = pyyoutube.Api(api_key=api_key)
         self.chunk_size = chunk_size
 
-    def _parse_youtube_video_id(self, video_id: str) -> str:
+    def parse_youtube_video_id(self, video_id: str) -> str:
         match = re.search(self.youtube_video_id_regex, video_id)
         if not match:
             return None
@@ -56,7 +56,7 @@ class YouTubeStreamer(BaseStreamer):
         return results
 
     def request_stream(self, id: str) -> Tuple[Generator[BytesIO, None, None], str, int, int]:
-        video_id = self._parse_youtube_video_id(id)
+        video_id = self.parse_youtube_video_id(id)
         if not video_id:
             raise StreamerError(
                 'Invalid videoId param, expected ' + self.youtube_video_id_regex)
@@ -90,7 +90,7 @@ class YouTubeStreamer(BaseStreamer):
                         return
                     transmitted += len(chunk)
                     yield chunk
-            except GeneratorExit:
+            except (GeneratorExit, ValueError):
                 ffmpeg_process.stdout.close()
                 ffmpeg_process.terminate()
         return stream

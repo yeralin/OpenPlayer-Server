@@ -36,7 +36,7 @@ class SpotifyStreamer(BaseStreamer):
             auth_manager=SpotifyClientCredentials(client_id=client_id,
                                                   client_secret=client_secret))
 
-    def _parse_spotify_track_id(self, track_id: str) -> Optional[str]:
+    def parse_spotify_track_id(self, track_id: str) -> Optional[str]:
         match = re.search(self.spotify_track_regex, track_id)
         if not match:
             return None
@@ -76,13 +76,13 @@ class SpotifyStreamer(BaseStreamer):
             artists = ', '.join([artist['name'] for artist in item['artists']])
             title = ' - '.join([artists, item['name']])
             # Construct url
-            track_id = self._parse_spotify_track_id(item['uri'])
+            track_id = self.parse_spotify_track_id(item['uri'])
             url = utils.construct_url(self.stream_path, trackId=track_id)
             results.append(Entry(title, url, self.get_name()))
         return results
     
     def request_stream(self, id: str) -> Tuple[Generator[BytesIO, None, None], str, int, int]:
-        track_id = self._parse_spotify_track_id(id)
+        track_id = self.parse_spotify_track_id(id)
         if not track_id:
             raise StreamerError(
                 'Invalid trackId param, expected ' + self.spotify_track_regex)
@@ -91,11 +91,13 @@ class SpotifyStreamer(BaseStreamer):
             TrackId.from_uri("spotify:track:" + track_id), preferred_quality, False, None)
         preferred_file = preferred_quality.get_file(
             playable_content.track.file)
+        # Get metadata
         artists = ', '.join([artist.name for artist in playable_content.track.artist])
         title = ' - '.join([artists, playable_content.track.name])
         bitrate = self._extract_bitrate(preferred_file.format)
         duration = playable_content.track.duration // 1000  # ms to sec
         size = utils.estimate_size(duration, bitrate)
+        # Generate stream
         stream = self.generate_stream(playable_content, bitrate, size)
         return (stream, title, duration, size)
 

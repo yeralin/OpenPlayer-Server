@@ -38,6 +38,30 @@ def search():
         query=search_query, limit=limit//2)
     return jsonify(spotify_results + youtube_results)
 
+@app.route('/stream', methods=['GET'])
+@auth.login_required
+def stream():
+    id = request.args.get('id')
+    download = request.args.get('download', False)
+    if not id:
+        return 'Missing id query param', 400
+    try:
+        track_id = spotify_streamer.parse_spotify_track_id(id)
+        video_id = youtube_streamer.parse_youtube_video_id(id)
+        if track_id:
+            stream, title, duration, size = spotify_streamer.request_stream(track_id)
+        elif video_id:
+            stream, title, duration, size = youtube_streamer.request_stream(video_id)
+        headers = {
+            'Content-Length': str(size),
+            'Audio-Duration': str(duration),
+            'Content-Type': 'audio/mpeg'
+        }
+        if download:
+            headers['Content-Disposition'] = f'attachment; filename="{title}.mp3"'
+    except StreamerError as e:
+        return str(e), 400
+    return Response(stream(), headers=headers)
 
 @app.route(SpotifyStreamer.search_path, methods=['GET'])
 @auth.login_required
@@ -105,6 +129,4 @@ def stream_youtube():
 
 
 if __name__ == "__main__":
-    import bjoern
-
-    bjoern.run(app, "0.0.0.0", 8000)
+    app.run("0.0.0.0", 8000)
