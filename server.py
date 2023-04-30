@@ -129,4 +129,5 @@ def stream_youtube():
 
 
 if __name__ == "__main__":
-    app.run("0.0.0.0", 8000)
+    import bjoern
+    bjoern.run(app, "0.0.0.0", 8000)
