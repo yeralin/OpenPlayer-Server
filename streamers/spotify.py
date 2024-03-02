@@ -62,7 +62,7 @@ class SpotifyStreamer(BaseStreamer):
             title = " - ".join([artists, item["name"]])
             # Construct url
             track_id = self.parse_spotify_track_id(item["uri"])
-            url = utils.construct_url(self.stream_path, trackId=track_id)
+            url = utils.construct_url(self.stream_path, scheme="https", trackId=track_id)
             results.append(Entry(title, url, self.get_name()))
         return results
 
@@ -103,7 +103,7 @@ class SpotifyStreamer(BaseStreamer):
                 out_chunk = input_stream.request(
                     range_start=start, range_end=end
                 ).buffer
-                decrypted_chunk = input_stream.decryptor().decrypt_chunk(
+                decrypted_chunk = input_stream._Streamer__audio_decrypt.decrypt_chunk(
                     start_chunk, out_chunk
                 )
                 start_chunk += 1

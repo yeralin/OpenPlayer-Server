@@ -1,5 +1,4 @@
 python-dotenv
-bjoern
 Flask
 Flask-HTTPAuth
 spotipy
