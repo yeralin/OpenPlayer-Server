@@ -12,6 +12,7 @@ from streamers.exceptions import StreamerError
 from streamers.spotify import SpotifyStreamer
 
 app = Flask(__name__)
+app.url_map.strict_slashes = False
 auth = HTTPBasicAuth()
 spotify_streamer = SpotifyStreamer()
 

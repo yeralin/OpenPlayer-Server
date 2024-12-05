@@ -62,7 +62,7 @@ class SpotifyStreamer(BaseStreamer):
             title = " - ".join([artists, item["name"]])
             # Construct url
             track_id = self.parse_spotify_track_id(item["uri"])
-            url = utils.construct_url(self.stream_path, trackId=track_id)
+            url = utils.construct_url(self.stream_path, scheme="https", trackId=track_id)
             results.append(Entry(title, url, self.get_name()))
         return results
 
