@@ -36,7 +36,7 @@ class SpotifyStreamer(BaseStreamer):
     ) -> None:
         super().__init__()
         self.chunk_size = chunk_size
-        self.session = Session.Builder().user_pass(username, pwd).create()
+        self.session = Session.Builder().stored_file().create()
         self.content_feeder = self.session.content_feeder()
         self.spotify_api = spotipy.Spotify(
             auth_manager=SpotifyClientCredentials(
