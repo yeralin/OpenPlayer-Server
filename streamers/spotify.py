@@ -23,7 +23,7 @@ class SpotifyStreamer(BaseStreamer):
     """
 
     stream_path = "/stream/spotify"
-    search_path = "/search/"
+    search_path = "/search/spotify"
     spotify_track_regex = r"([a-zA-Z0-9]{22})"
 
     def __init__(
