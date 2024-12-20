@@ -74,7 +74,7 @@ class SpotifyStreamer(BaseStreamer):
             raise StreamerError(
                 "Invalid trackId param, expected " + self.spotify_track_regex
             )
-        preferred_quality = VorbisOnlyAudioQuality(AudioQuality.HIGH)
+        preferred_quality = VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH)
         playable_content = self.content_feeder.load(
             TrackId.from_uri("spotify:track:" + spotify_track_id), preferred_quality, False, None
         )
