@@ -101,9 +101,14 @@ class SpotifyStreamer(BaseStreamer):
                 "Invalid trackId param, expected " + self.spotify_track_regex
             )
         preferred_quality = VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH)
-        playable_content = self.content_feeder.load(
-            TrackId.from_uri("spotify:track:" + spotify_track_id), preferred_quality, False, None
-        )
+        try:
+            playable_content = self.content_feeder.load(
+                TrackId.from_uri("spotify:track:" + spotify_track_id), preferred_quality, False, None
+            )
+        except RuntimeError as e:
+            if str(e) == "Cannot get alternative track":
+                raise StreamerError(str(e)) from e
+            raise e
         preferred_file = preferred_quality.get_file(
             playable_content.track.file)
         # Get metadata
