@@ -100,7 +100,7 @@ class SpotifyStreamer(BaseStreamer):
             raise StreamerError(
                 "Invalid trackId param, expected " + self.spotify_track_regex
             )
-        preferred_quality = VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH)
+        preferred_quality = VorbisOnlyAudioQuality(AudioQuality.HIGH) # AudioQuality.VERY_HIGH (320kbps) only on Spotify Premium
         try:
             playable_content = self.content_feeder.load(
                 TrackId.from_uri("spotify:track:" + spotify_track_id), preferred_quality, False, None
@@ -119,38 +119,17 @@ class SpotifyStreamer(BaseStreamer):
         size = utils.estimate_size(duration, bitrate)
         # Generate stream
         stream = self.generate_stream(playable_content, bitrate, size)
-        # Ogg stream
-        # stream = self.generate_stream_ogg(playable_content, range_start, range_end)
-        # return (stream, title, duration, playable_content.input_stream.size)
         return (stream, title, duration, size)
-
-    def generate_stream_ogg(
-        self,
-        content: PlayableContentFeeder.LoadedStream,
-        range_start: int,
-        range_end: int,
-    ) -> Generator[BytesIO, None, None]:
-        def stream():
-            input_stream = content.input_stream
-            max_chunk = content.input_stream.size / self.chunk_size
-            start_chunk = int(range_start / self.chunk_size)
-            end_chunk = int(range_end / self.chunk_size) if range_end else max_chunk
-            while start_chunk < end_chunk:
-                start = self.chunk_size * start_chunk
-                end = (start_chunk + 1) * self.chunk_size - 1
-                out_chunk = input_stream.request(
-                    range_start=start, range_end=end
-                ).buffer
-                decrypted_chunk = input_stream._Streamer__audio_decrypt.decrypt_chunk(
-                    start_chunk, out_chunk
-                )
-                start_chunk += 1
-                yield decrypted_chunk
-
-        return stream
+        """ Pass-through Ogg stream (not used)
+        stream = self.generate_stream_ogg(playable_content, range_start, range_end)
+        return (stream, title, duration, playable_content.input_stream.size)
+        """
 
     def generate_stream(self, payload: PlayableContentFeeder.LoadedStream,
                         bitrate: int, size: int) -> Generator[BytesIO, None, None]:
+        """
+        Converts OGG to MP3 on the fly using FFMPEG
+        """
         
         def async_write(ffmpeg_process, stream):
             try:
@@ -193,3 +172,31 @@ class SpotifyStreamer(BaseStreamer):
                 ffmpeg_process.stdout.close()
                 ffmpeg_process.terminate()
         return stream
+
+""" Pass-through, streaming in original OGG format
+
+    def generate_stream_ogg(
+        self,
+        content: PlayableContentFeeder.LoadedStream,
+        range_start: int,
+        range_end: int,
+    ) -> Generator[BytesIO, None, None]:
+        def stream():
+            input_stream = content.input_stream
+            max_chunk = content.input_stream.size / self.chunk_size
+            start_chunk = int(range_start / self.chunk_size)
+            end_chunk = int(range_end / self.chunk_size) if range_end else max_chunk
+            while start_chunk < end_chunk:
+                start = self.chunk_size * start_chunk
+                end = (start_chunk + 1) * self.chunk_size - 1
+                out_chunk = input_stream.request(
+                    range_start=start, range_end=end
+                ).buffer
+                decrypted_chunk = input_stream._Streamer__audio_decrypt.decrypt_chunk(
+                    start_chunk, out_chunk
+                )
+                start_chunk += 1
+                yield decrypted_chunk
+
+        return stream
+"""
