@@ -189,7 +189,10 @@ class SpotifyStreamer(BaseStreamer):
                     transmitted += len(out_chunk)
                     yield out_chunk
             except:
+                pass
+            finally:
                 ffmpeg_process.stdin.close()
                 ffmpeg_process.stdout.close()
                 ffmpeg_process.terminate()
+                ffmpeg_process.wait()  # Ensure the process has terminated
         return stream
