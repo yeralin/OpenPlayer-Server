@@ -60,21 +60,18 @@ def stream_spotify():
             range_end = size
         headers = {
             "Content-Range": f"bytes {range_start}-{range_end - 1}/{size}",
-            "Content-Length": f"{size}",
+            "Content-Length": str(range_end - range_start),
             "Accept-Ranges": "bytes",
-            "Content-Type": "audio/ogg",
+            "Content-Type": "audio/mp3",
+            "Content-Disposition": f'{"attachment" if download else "inline"}; filename="{quote(title)}.mp3"',
             "Audio-Duration": str(duration),  # Custom header
         }
-        if download:
-            headers[
-                "Content-Disposition"
-            ] = f'attachment; filename="{quote(title)}.mp3"'
     except StreamerError as e:
         return str(e), 400
     return Response(
         stream_with_context(stream()) if request.method == "GET" else {},
         headers=headers,
-        status=206,
+        status=206 if range_header else 200,
     )
 
 
