@@ -160,19 +160,20 @@ class SpotifyStreamer(BaseStreamer):
                 while True:
                     out_chunk = ffmpeg_process.stdout.read(self.chunk_size)
                     if not out_chunk:
-                        ffmpeg_process.stdout.close()
-                        ffmpeg_process.terminate()
                         if transmitted < size:
                             yield b'\0' * (size-transmitted)
-                        return
+                        break
                     transmitted += len(out_chunk)
                     yield out_chunk
             except:
                 pass
             finally:
-                ffmpeg_process.stdin.close()
-                ffmpeg_process.stdout.close()
+                if ffmpeg_process.stdin:
+                    ffmpeg_process.stdin.close()
+                if ffmpeg_process.stdout:
+                    ffmpeg_process.stdout.close()
                 ffmpeg_process.terminate()
+                ffmpeg_process.wait()
         return stream
 
 """ Pass-through, streaming in original OGG format
