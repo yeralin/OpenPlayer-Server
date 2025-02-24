@@ -2,45 +2,68 @@
 """
 Module for downloading songs using a Spotify-based API.
 
-Note: For proper naming style, consider renaming this file to 
-      "download_songs.py" (i.e. use snake_case).
+Note:
+    For proper naming style, consider renaming this file to 
+    "download_songs.py" (i.e. use snake_case).
+
+    This module now supports fetching songs from a Spotify playlist,
+    processing local MP3 tracks, or downloading tracks from a file of
+    Spotify URLs.
 """
 
 import argparse
 import logging
 import os
+import re
 import time
 from typing import Optional
-
 from urllib.parse import quote, unquote
 
 import requests
+import spotipy
 from fuzzywuzzy import fuzz
-from mutagen.mp3 import MP3
 from mutagen._util import MutagenError
+from mutagen.mp3 import MP3
+from spotipy.oauth2 import SpotifyClientCredentials
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize the filename by replacing invalid characters.
+    """
+    return re.sub(r'[<>:"/\\|?*]', "_", filename)
 
 
 class SpotifyClient:
     """
     A client to search for Spotify tracks and download them via API.
+
+    Also initializes a Spotipy client for fetching playlist information.
     """
-    SEARCH_URL_TEMPLATE: str = (
-        "https://music.yeralin.net/search/spotify?q={}"
-    )
+
+    SEARCH_URL_TEMPLATE: str = "https://music.yeralin.net/search/spotify?q={}"
     STREAM_URL_TEMPLATE: str = (
         "https://music.yeralin.net/stream/spotify?trackId={}&download=true"
     )
-    AUTH_HEADERS: dict = {
-        "Authorization": "Basic ZGFuaXlhcjpkajJndmNQNiVvTiVlcQ=="
-    }
+    AUTH_HEADERS: dict = {"Authorization": "Basic ZGFuaXlhcjpkajJndmNQNiVvTiVlcQ=="}
     FUZZY_MATCH_THRESHOLD: int = 80
 
-    def __init__(self, session: Optional[requests.Session] = None) -> None:
+    def __init__(
+        self,
+        session: Optional[requests.Session] = None,
+        client_id: Optional[str] = os.getenv("SPOTIFY_CLIENT_ID"),
+        client_secret: Optional[str] = os.getenv("SPOTIFY_CLIENT_SECRET"),
+    ) -> None:
         """
         Initialize the Spotify client with an optional requests.Session
-        for connection reuse.
+        for connection reuse and initialize a Spotipy client.
         """
         self.session = session if session is not None else requests.Session()
+        self.spotify_api = spotipy.Spotify(
+            auth_manager=SpotifyClientCredentials(
+                client_id=client_id, client_secret=client_secret
+            )
+        )
 
     def search_spotify(self, track_name: str) -> Optional[str]:
         """
@@ -66,9 +89,7 @@ class SpotifyClient:
         try:
             data = response.json()
         except ValueError as exc:
-            logging.error(
-                "Error decoding JSON for track '%s': %s", track_name, exc
-            )
+            logging.error("Error decoding JSON for track '%s': %s", track_name, exc)
             return None
 
         if not data:
@@ -78,9 +99,7 @@ class SpotifyClient:
         # Compute fuzzy matching scores.
         for entry in data:
             title = entry.get("title", "")
-            entry["match_score"] = fuzz.ratio(
-                title.lower(), track_name.lower()
-            )
+            entry["match_score"] = fuzz.ratio(title.lower(), track_name.lower())
 
         best_match = max(data, key=lambda x: x.get("match_score", 0), default={})
         match_score = best_match.get("match_score", 0)
@@ -106,9 +125,12 @@ class SpotifyClient:
         """
         Download a track from Spotify using the provided track URL.
 
-        :param track_url: URL from search_spotify or constructed from a file.
-        :param file_path: Target file path where the track should be saved.
-                          If provided, the old file is removed before saving.
+        If file_path points to a directory, the file is saved in that directory
+        (using the filename extracted from the response header).
+
+        :param track_url: URL for the track download.
+        :param file_path: Target file path (or directory) where the track should be saved.
+                           If given as a file path and the file exists, it is removed before saving.
         :return: True if download succeeds; False otherwise.
         """
         download_url = f"{track_url}&download=true"
@@ -128,20 +150,18 @@ class SpotifyClient:
         if response.status_code in (200, 206):
             content_disp = response.headers.get("Content-Disposition", "")
             if "filename=" in content_disp:
-                filename = unquote(
-                    content_disp.split("filename=")[-1].strip('"')
-                )
-                for char in '<>:"/\\|?*':
-                    filename = filename.replace(char, "_")
+                filename = unquote(content_disp.split("filename=")[-1].strip('"'))
+                filename = sanitize_filename(filename)
                 if file_path:
-                    dirname = os.path.dirname(file_path)
-                    try:
-                        if os.path.exists(file_path):
-                            os.remove(file_path)
-                    except OSError as exc:
-                        logging.error(
-                            "Error removing file %s: %s", file_path, exc
-                        )
+                    if os.path.isdir(file_path):
+                        dirname = file_path
+                    else:
+                        dirname = os.path.dirname(file_path)
+                        try:
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                        except OSError as exc:
+                            logging.error("Error removing file %s: %s", file_path, exc)
                     file_path = os.path.join(dirname, filename)
                 else:
                     file_path = filename
@@ -154,14 +174,11 @@ class SpotifyClient:
                 logging.info("Downloaded track to '%s'", file_path)
                 return True
             except OSError as exc:
-                logging.error(
-                    "Error writing file '%s': %s", file_path, exc
-                )
+                logging.error("Error writing file '%s': %s", file_path, exc)
                 return False
         elif response.status_code == 400:
             logging.error(
-                "Spotify track ID not found for URL '%s' (HTTP 400)",
-                track_url,
+                "Spotify track ID not found for URL '%s' (HTTP 400)", track_url
             )
             return False
         else:
@@ -173,11 +190,60 @@ class SpotifyClient:
             return False
 
 
-def process_tracks(
+def download_playlist(
+    spotify_client: SpotifyClient,
+    playlist_id: str,
+    download_dir: str = ".",
+    delay: int = 60,
+) -> None:
+    """
+    Fetch songs from a Spotify playlist and download them.
+
+    Uses the Spotipy client (already initialized in the SpotifyClient instance)
+    to retrieve the playlist's tracks. For each track, the track ID is extracted
+    and used directly to construct the download URL via STREAM_URL_TEMPLATE.
+
+    :param spotify_client: An instance of SpotifyClient.
+    :param playlist_id: The Spotify playlist ID or URL.
+    :param download_dir: Directory to save downloaded songs.
+    :param delay: Seconds to wait between downloads.
+    """
+    try:
+        results = spotify_client.spotify_api.playlist_tracks(playlist_id)
+    except Exception as exc:
+        logging.error("Error fetching playlist: %s", exc)
+        return
+
+    tracks = results.get("items", [])
+    while results.get("next"):
+        results = spotify_client.spotify_api.next(results)
+        tracks.extend(results.get("items", []))
+
+    for item in tracks:
+        track_info = item.get("track")
+        if not track_info:
+            continue
+
+        track_id = track_info.get("id")
+        if not track_id:
+            logging.warning("No track id found in item: %s", item)
+            continue
+
+        # Directly construct the download URL using the track ID.
+        track_url = SpotifyClient.STREAM_URL_TEMPLATE.format(track_id)
+        logging.info("Processing playlist track: '%s'", track_url)
+
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir, exist_ok=True)
+        spotify_client.download_spotify_track(track_url, download_dir)
+        time.sleep(delay)
+
+
+def enhance_tracks(
     spotify_client: SpotifyClient, tracks_dir: str = ".", delay: int = 60
 ) -> None:
     """
-    Process all MP3 tracks in the given directory. For tracks with a bitrate
+    Enhance all MP3 tracks in the given directory. For tracks with a bitrate
     lower than 320 kbps, search for a high-quality version and download it.
 
     :param spotify_client: An instance of SpotifyClient.
@@ -191,16 +257,11 @@ def process_tracks(
                 try:
                     audio = MP3(filepath)
                 except MutagenError as exc:
-                    logging.error(
-                        "Failed to read MP3 file '%s': %s", filepath, exc
-                    )
+                    logging.error("Failed to read MP3 file '%s': %s", filepath, exc)
                     continue
 
-                # Use getattr to safely retrieve bitrate.
                 bitrate = (
-                    getattr(audio.info, "bitrate", 0) // 1000
-                    if audio.info
-                    else 0
+                    (getattr(audio.info, "bitrate", 0) // 1000) if audio.info else 0
                 )
                 if bitrate < 320:
                     if audio.tags and "TPE1" in audio.tags and "TIT2" in audio.tags:
@@ -210,9 +271,7 @@ def process_tracks(
                             track_name = f"{artist} - {title}"
                         except (IndexError, AttributeError) as exc:
                             logging.error(
-                                "Error extracting metadata from '%s': %s",
-                                filepath,
-                                exc,
+                                "Error extracting metadata from '%s': %s", filepath, exc
                             )
                             track_name = os.path.splitext(file)[0]
                     else:
@@ -226,25 +285,14 @@ def process_tracks(
                     track_url = spotify_client.search_spotify(track_name)
                     if track_url:
                         if spotify_client.download_spotify_track(track_url, filepath):
-                            logging.info(
-                                "Successfully processed track '%s'", track_name
-                            )
+                            logging.info("Successfully processed track '%s'", track_name)
                         else:
-                            logging.error(
-                                "Failed to download improved version for '%s'",
-                                track_name,
-                            )
+                            logging.error("Failed to download improved version for '%s'", track_name)
                         time.sleep(delay)
                     else:
-                        logging.warning(
-                            "Spotify track not found for '%s'", track_name
-                        )
+                        logging.warning("Spotify track not found for '%s'", track_name)
                 else:
-                    logging.info(
-                        "Track '%s' has acceptable bitrate (%dkbps)",
-                        file,
-                        bitrate,
-                    )
+                    logging.info("Track '%s' has acceptable bitrate (%dkbps)", file, bitrate)
 
 
 def process_songs_file(
@@ -285,6 +333,7 @@ def main() -> None:
             "using a Spotify-based API."
         )
     )
+    # The mutually exclusive group ensures that -d, -s, and -p cannot be mixed.
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "-d",
@@ -298,20 +347,23 @@ def main() -> None:
         help="File containing Spotify track URLs to download",
         type=str,
     )
+    group.add_argument(
+        "-p",
+        "--playlist",
+        help="Spotify playlist ID or URL to download tracks from",
+        type=str,
+    )
     parser.add_argument(
         "--delay",
         help=(
             "Delay between downloads in seconds "
-            "(default: 60 for directory, 20 for songs file)"
+            "(default: 60 for directory/playlist, 20 for songs file)"
         ),
         type=int,
     )
     parser.add_argument(
         "--log-level",
-        help=(
-            "Logging level (DEBUG, INFO, WARNING, ERROR). "
-            "Default is INFO."
-        ),
+        help="Logging level (DEBUG, INFO, WARNING, ERROR). Default is INFO.",
         default="INFO",
         type=str,
     )
@@ -321,18 +373,22 @@ def main() -> None:
     if not isinstance(numeric_level, int):
         numeric_level = logging.INFO
     logging.basicConfig(
-        level=numeric_level,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+        level=numeric_level, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
     spotify_client = SpotifyClient()
 
     if args.directory:
-        delay = args.delay if args.delay is not None else 60
-        process_tracks(spotify_client, tracks_dir=args.directory, delay=delay)
+        delay_val = args.delay if args.delay is not None else 20
+        enhance_tracks(spotify_client, tracks_dir=args.directory, delay=delay_val)
     elif args.songs:
-        delay = args.delay if args.delay is not None else 20
-        process_songs_file(spotify_client, songs_file=args.songs, delay=delay)
+        delay_val = args.delay if args.delay is not None else 20
+        process_songs_file(spotify_client, songs_file=args.songs, delay=delay_val)
+    elif args.playlist:
+        delay_val = args.delay if args.delay is not None else 20
+        download_playlist(
+            spotify_client, playlist_id=args.playlist, download_dir=".", delay=delay_val
+        )
 
 
 if __name__ == "__main__":
