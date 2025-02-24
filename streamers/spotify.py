@@ -39,13 +39,16 @@ class SpotifyStreamer(BaseStreamer):
     ) -> None:
         super().__init__()
         self.chunk_size = chunk_size
-        self.session = Session.Builder().stored_file().create()
-        self.content_feeder = self.session.content_feeder()
         self.spotify_api = spotipy.Spotify(
             auth_manager=SpotifyClientCredentials(
                 client_id=client_id, client_secret=client_secret
             )
         )
+        self.init_session()
+    
+    def init_session(self):
+        self.session = Session.Builder().stored_file().create()
+        self.content_feeder = self.session.content_feeder()
 
     def parse_spotify_track_id(self, track_id: str) -> Optional[TrackId]:
         match = re.search(self.spotify_track_regex, track_id)
@@ -105,10 +108,11 @@ class SpotifyStreamer(BaseStreamer):
             playable_content = self.content_feeder.load(
                 TrackId.from_uri("spotify:track:" + spotify_track_id), preferred_quality, False, None
             )
-        except RuntimeError as e:
-            if str(e) == "Cannot get alternative track":
-                raise StreamerError(str(e)) from e
-            raise e
+        except Exception:
+            self.init_session() # Reset session
+            playable_content = self.content_feeder.load(
+                TrackId.from_uri("spotify:track:" + spotify_track_id), preferred_quality, False, None
+            )
         preferred_file = preferred_quality.get_file(
             playable_content.track.file)
         # Get metadata
