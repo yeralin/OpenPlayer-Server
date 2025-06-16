@@ -7,8 +7,8 @@ Note:
     "download_songs.py" (i.e. use snake_case).
 
     This module now supports fetching songs from a Spotify playlist,
-    processing local MP3 tracks, or downloading tracks from a file of
-    Spotify URLs.
+    processing local MP3 tracks, downloading tracks from a file of
+    Spotify URLs, or syncing local playlist directories to Spotify playlists.
 """
 
 import argparse
@@ -16,7 +16,7 @@ import logging
 import os
 import re
 import time
-from typing import Optional
+from typing import Optional, Dict, List
 from urllib.parse import quote, unquote
 
 import requests
@@ -24,7 +24,7 @@ import spotipy
 from fuzzywuzzy import fuzz
 from mutagen._util import MutagenError
 from mutagen.mp3 import MP3
-from spotipy.oauth2 import SpotifyClientCredentials
+from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 
 
 def sanitize_filename(filename: str) -> str:
@@ -51,19 +51,55 @@ class SpotifyClient:
     def __init__(
         self,
         session: Optional[requests.Session] = None,
-        client_id: Optional[str] = os.getenv("SPOTIFY_CLIENT_ID"),
-        client_secret: Optional[str] = os.getenv("SPOTIFY_CLIENT_SECRET"),
+        client_id: Optional[str] = os.getenv("SPOTIFY_CLIENT_ID").strip(),
+        client_secret: Optional[str] = os.getenv("SPOTIFY_CLIENT_SECRET").strip(),
+        spotipy_auth_manager=None,
     ) -> None:
         """
         Initialize the Spotify client with an optional requests.Session
         for connection reuse and initialize a Spotipy client.
+
+        If spotipy_auth_manager is provided, it will be used for Spotipy authentication.
+        Otherwise, SpotifyClientCredentials will be used.
         """
         self.session = session if session is not None else requests.Session()
-        self.spotify_api = spotipy.Spotify(
-            auth_manager=SpotifyClientCredentials(
-                client_id=client_id, client_secret=client_secret
+        if spotipy_auth_manager is not None:
+            # User-level access
+            self.spotify_api = spotipy.Spotify(auth_manager=spotipy_auth_manager)
+        else:
+            # App-only access
+            self.spotify_api = spotipy.Spotify(
+                auth_manager=SpotifyClientCredentials(
+                    client_id=client_id, client_secret=client_secret
+                )
             )
+
+    @classmethod
+    def with_oauth(
+        cls,
+        session: Optional[requests.Session] = None,
+        client_id: Optional[str] = os.getenv("SPOTIFY_CLIENT_ID").strip(),
+        client_secret: Optional[str] = os.getenv("SPOTIFY_CLIENT_SECRET").strip(),
+        redirect_uri: Optional[str] = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8888/callback"),
+        scope: Optional[str] = None,
+    ):
+        """
+        Alternative constructor that uses SpotifyOAuth for user-level actions.
+        """
+        if scope is None:
+            # Default to all scopes needed for user-level actions
+            scope = (
+                "playlist-read-private playlist-read-collaborative "
+                "playlist-modify-public playlist-modify-private "
+                "user-read-private user-read-email"
+            )
+        auth_manager = SpotifyOAuth(
+            client_id=client_id,
+            client_secret=client_secret,
+            redirect_uri=redirect_uri,
+            scope=scope,
         )
+        return cls(session=session, client_id=client_id, client_secret=client_secret, spotipy_auth_manager=auth_manager)
 
     def search_spotify(self, track_name: str) -> Optional[str]:
         """
@@ -188,6 +224,140 @@ class SpotifyClient:
                 response.status_code,
             )
             return False
+
+    def create_playlist(self, playlist_name: str, user_id: str) -> Optional[str]:
+        """
+        Create a Spotify playlist with the given name for the user if it doesn't exist.
+
+        :param playlist_name: Name of the playlist to create.
+        :param user_id: Spotify user ID.
+        :return: Playlist ID if created or found, None otherwise.
+        """
+        # Get all user's playlists (name -> id)
+        try:
+            playlists = {}
+            results = self.spotify_api.current_user_playlists()
+            while results:
+                for pl in results["items"]:
+                    playlists[pl["name"]] = pl["id"]
+                if results["next"]:
+                    results = self.spotify_api.next(results)
+                else:
+                    break
+        except Exception as exc:
+            logging.error("Could not fetch user's playlists: %s", exc)
+            return None
+
+        playlist_id = playlists.get(playlist_name)
+        if not playlist_id:
+            try:
+                created = self.spotify_api.user_playlist_create(
+                    user=user_id,
+                    name=playlist_name,
+                    public=True
+                )
+                playlist_id = created["id"]
+                logging.info("Created playlist '%s' (id: %s)", playlist_name, playlist_id)
+            except Exception as exc:
+                logging.error("Failed to create playlist '%s': %s", playlist_name, exc)
+                return None
+        else:
+            logging.info("Using existing playlist '%s' (id: %s)", playlist_name, playlist_id)
+        return playlist_id
+
+    def sync_playlists(self, playlists_root_dir: str, user_id: Optional[str] = None) -> None:
+        """
+        Sync local playlists (each subdirectory is a playlist) to Spotify.
+
+        For each subdirectory in playlists_root_dir:
+            - Use subdirectory name as playlist name.
+            - Create the playlist in Spotify if it doesn't exist.
+            - For each file in the subdirectory, parse as "Artist - Song.mp3".
+            - Find the song in Spotify and add it to the playlist.
+
+        :param playlists_root_dir: Directory containing subdirectories as playlists.
+        :param user_id: Spotify user ID. If None, will try to get from Spotify API.
+        """
+        if not os.path.isdir(playlists_root_dir):
+            logging.error("Provided playlists root directory '%s' does not exist or is not a directory.", playlists_root_dir)
+            return
+
+        # Get user_id if not provided
+        if user_id is None:
+            try:
+                user_profile = self.spotify_api.me()
+                user_id = user_profile["id"]
+            except Exception as exc:
+                logging.error("Could not get Spotify user ID: %s", exc)
+                return
+
+        for subdir in os.listdir(playlists_root_dir):
+            subdir_path = os.path.join(playlists_root_dir, subdir)
+            if not os.path.isdir(subdir_path):
+                continue
+            playlist_name = subdir
+            playlist_id = self.create_playlist(playlist_name, user_id)
+            if not playlist_id:
+                continue
+
+            # Fetch all existing track URIs in the playlist to avoid duplicates
+            existing_uris = set()
+            try:
+                results = self.spotify_api.playlist_tracks(playlist_id)
+                while True:
+                    items = results.get("items", [])
+                    for item in items:
+                        track = item.get("track")
+                        if track and "uri" in track:
+                            existing_uris.add(track["uri"])
+                    if results.get("next"):
+                        results = self.spotify_api.next(results)
+                    else:
+                        break
+            except Exception as exc:
+                logging.error("Failed to fetch existing tracks for playlist '%s': %s", playlist_name, exc)
+                # If we can't fetch, fallback to adding all tracks (may cause duplicates)
+                existing_uris = set()
+
+            # Gather track URIs to add, skipping those already in the playlist
+            track_uris = []
+            files = os.listdir(subdir_path)
+            # Sort files by modification time (oldest first)
+            files.sort(key=lambda f: os.path.getmtime(os.path.join(subdir_path, f)))
+
+            for file in files:
+                base = os.path.splitext(file)[0]
+                # Try to parse "Artist - Song"
+                if " - " in base:
+                    artist, title = base.split(" - ", 1)
+                else:
+                    # fallback: treat whole as title
+                    artist, title = "", base
+                query = f"{artist} {title}".strip()
+                try:
+                    # Use Spotipy search for best match
+                    results = self.spotify_api.search(q=query, type="track", limit=1)
+                    items = results.get("tracks", {}).get("items", [])
+                    if items:
+                        track_uri = items[0]["uri"]
+                        if track_uri in existing_uris:
+                            logging.info("Track already in playlist, skipping: '%s' (%s)", file, track_uri)
+                        else:
+                            track_uris.append(track_uri)
+                            logging.info("Found track for '%s': %s", file, track_uri)
+                    else:
+                        logging.warning("No Spotify track found for '%s'", file)
+                except Exception as exc:
+                    logging.error("Error searching for '%s': %s", file, exc)
+
+            # Add tracks to playlist in batches of 100
+            for i in range(0, len(track_uris), 100):
+                batch = track_uris[i:i+100]
+                try:
+                    self.spotify_api.playlist_add_items(playlist_id, batch)
+                    logging.info("Added %d tracks to playlist '%s'", len(batch), playlist_name)
+                except Exception as exc:
+                    logging.error("Failed to add tracks to playlist '%s': %s", playlist_name, exc)
 
 
 def download_playlist(
@@ -333,11 +503,11 @@ def main() -> None:
             "using a Spotify-based API."
         )
     )
-    # The mutually exclusive group ensures that -d, -s, and -p cannot be mixed.
+    # The mutually exclusive group ensures that -e, -s, -p, and -y cannot be mixed.
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "-d",
-        "--directory",
+        "-e",
+        "--enhance",
         help="Directory containing MP3 tracks to process",
         type=str,
     )
@@ -353,11 +523,17 @@ def main() -> None:
         help="Spotify playlist ID or URL to download tracks from",
         type=str,
     )
+    group.add_argument(
+        "-y",
+        "--sync-playlists",
+        help="Directory where each sub-directory is a playlist to sync to Spotify",
+        type=str,
+    )
     parser.add_argument(
         "--delay",
         help=(
             "Delay between downloads in seconds "
-            "(default: 60 for directory/playlist, 20 for songs file)"
+            "(default: 20 to wait in between downloads)"
         ),
         type=int,
     )
@@ -376,11 +552,18 @@ def main() -> None:
         level=numeric_level, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
-    spotify_client = SpotifyClient()
+    # Determine if user-level actions are needed
+    # Use SpotifyOAuth for commands that require user-level data
+    if args.sync_playlists:
+        # Use user-level OAuth for playlist sync
+        spotify_client = SpotifyClient.with_oauth()
+    else:
+        # For other commands, client credentials is sufficient
+        spotify_client = SpotifyClient()
 
-    if args.directory:
+    if args.enhance:
         delay_val = args.delay if args.delay is not None else 20
-        enhance_tracks(spotify_client, tracks_dir=args.directory, delay=delay_val)
+        enhance_tracks(spotify_client, tracks_dir=args.enhance, delay=delay_val)
     elif args.songs:
         delay_val = args.delay if args.delay is not None else 20
         process_songs_file(spotify_client, songs_file=args.songs, delay=delay_val)
@@ -389,6 +572,9 @@ def main() -> None:
         download_playlist(
             spotify_client, playlist_id=args.playlist, download_dir=".", delay=delay_val
         )
+    elif args.sync_playlists:
+        # No delay argument for sync_playlists, as it's not a download operation
+        spotify_client.sync_playlists(args.sync_playlists)
 
 
 if __name__ == "__main__":
