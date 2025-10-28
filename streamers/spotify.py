@@ -1,9 +1,8 @@
 """This module provides functionality for streaming Spotify tracks using the Spotify API and librespot."""
 import re
+import logging
 from io import BytesIO
 from os import getenv
-import subprocess
-import threading
 from typing import Generator, List, Optional, Tuple
 
 import spotipy
@@ -18,6 +17,9 @@ from models import Entry
 from streamers import utils
 from streamers.base_streamer import BaseStreamer
 from streamers.exceptions import StreamerError
+from streamers.ffmpeg_converter import FFmpegConverter
+
+logger = logging.getLogger(__name__)
 
 
 class SpotifyStreamer(BaseStreamer):
@@ -44,11 +46,34 @@ class SpotifyStreamer(BaseStreamer):
                 client_id=client_id, client_secret=client_secret
             )
         )
+        self.session = None
+        self.content_feeder = None
         self.init_session()
     
     def init_session(self):
-        self.session = Session.Builder().stored_file().create()
-        self.content_feeder = self.session.content_feeder()
+        """Initialize or reinitialize the Spotify session."""
+        # Clean up existing session if any
+        self.cleanup_session()
+        
+        try:
+            self.session = Session.Builder().stored_file().create()
+            self.content_feeder = self.session.content_feeder()
+        except Exception as e:
+            logger.error(f"Failed to initialize session: {e}")
+            raise
+    
+    def cleanup_session(self):
+        """Clean up the current Spotify session."""
+        # Content feeder is part of session, no need to close separately
+        self.content_feeder = None
+        
+        if self.session is not None:
+            try:
+                self.session.close()
+            except Exception as e:
+                logger.debug(f"Error closing session: {e}")
+            finally:
+                self.session = None
 
     def parse_spotify_track_id(self, track_id: str) -> Optional[TrackId]:
         match = re.search(self.spotify_track_regex, track_id)
@@ -63,7 +88,6 @@ class SpotifyStreamer(BaseStreamer):
         if audio_format in [
                 AudioFile.MP3_96,
                 AudioFile.OGG_VORBIS_96,
-                AudioFile.AAC_24_NORM,
         ]:
             return 96
         if audio_format in [
@@ -109,10 +133,13 @@ class SpotifyStreamer(BaseStreamer):
                 TrackId.from_uri("spotify:track:" + spotify_track_id), preferred_quality, False, None
             )
         except Exception:
-            self.init_session() # Reset session
+            # Reset session
+            self.cleanup_session()
+            self.init_session()
             playable_content = self.content_feeder.load(
                 TrackId.from_uri("spotify:track:" + spotify_track_id), preferred_quality, False, None
             )
+        
         preferred_file = preferred_quality.get_file(
             playable_content.track.file)
         # Get metadata
@@ -132,53 +159,30 @@ class SpotifyStreamer(BaseStreamer):
     def generate_stream(self, payload: PlayableContentFeeder.LoadedStream,
                         bitrate: int, size: int) -> Generator[BytesIO, None, None]:
         """
-        Converts OGG to MP3 on the fly using FFMPEG
-        """
+        Converts OGG to MP3 on the fly using FFmpeg.
         
-        def async_write(ffmpeg_process, stream):
-            try:
-                while True:
-                    in_chunk = stream.read(self.chunk_size)
-                    if not in_chunk:
-                        ffmpeg_process.stdin.close()
-                        stream.read(self.chunk_size)
-                        break
-                    ffmpeg_process.stdin.write(in_chunk)
-            except:
-                ffmpeg_process.stdin.close()
-                stream.close()
-
+        Args:
+            payload: The loaded stream from Spotify.
+            bitrate: Target bitrate for MP3 output.
+            size: Estimated size of output.
+            
+        Returns:
+            A generator function that yields MP3 audio chunks.
+        """
         def stream():
             input_stream = payload.input_stream.stream()
-            ffmpeg_process = subprocess.Popen(
-                'ffmpeg -f ogg -i - -vn -b:a {}k -f mp3 -'
-                .format(bitrate).split(),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL
-            )
-            write_t = threading.Thread(target=async_write, args=(ffmpeg_process,input_stream,))
-            write_t.start()
-            transmitted = 0
+            converter = FFmpegConverter(chunk_size=self.chunk_size)
             try:
-                while True:
-                    out_chunk = ffmpeg_process.stdout.read(self.chunk_size)
-                    if not out_chunk:
-                        if transmitted < size:
-                            yield b'\0' * (size-transmitted)
-                        break
-                    transmitted += len(out_chunk)
-                    yield out_chunk
-            except:
-                pass
+                yield from converter.convert_ogg_to_mp3(input_stream, bitrate, size)
             finally:
-                if ffmpeg_process.stdin:
-                    ffmpeg_process.stdin.close()
-                if ffmpeg_process.stdout:
-                    ffmpeg_process.stdout.close()
-                ffmpeg_process.terminate()
-                ffmpeg_process.wait()
+                # Ensure cleanup happens even if generator is not fully consumed
+                converter.cleanup()
+        
         return stream
+    
+    def __del__(self):
+        """Destructor to ensure session cleanup on garbage collection."""
+        self.cleanup_session()
 
 """ Pass-through, streaming in original OGG format
 
