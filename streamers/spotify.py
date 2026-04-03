@@ -6,7 +6,7 @@ from os import getenv
 from typing import Generator, List, Optional, Tuple
 
 import spotipy
-from librespot.audio import PlayableContentFeeder
+from librespot.audio import LoadedStream
 from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
 from librespot.proto.Metadata_pb2 import AudioFile
 from librespot.core import Session
@@ -127,7 +127,7 @@ class SpotifyStreamer(BaseStreamer):
             raise StreamerError(
                 "Invalid trackId param, expected " + self.spotify_track_regex
             )
-        preferred_quality = VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH) # AudioQuality.VERY_HIGH (320kbps) only on Spotify Premium
+        preferred_quality = VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH) # VERY_HIGH & LOSSLESS only on Spotify Premium
         try:
             playable_content = self.content_feeder.load(
                 TrackId.from_uri("spotify:track:" + spotify_track_id), preferred_quality, False, None
@@ -156,7 +156,7 @@ class SpotifyStreamer(BaseStreamer):
         return (stream, title, duration, playable_content.input_stream.size)
         """
 
-    def generate_stream(self, payload: PlayableContentFeeder.LoadedStream,
+    def generate_stream(self, payload: LoadedStream,
                         bitrate: int, size: int) -> Generator[BytesIO, None, None]:
         """
         Converts OGG to MP3 on the fly using FFmpeg.
